@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <body style="touch-action: none; background: black;">
+    <script>
+
+      const ws = new WebSocket("ws://192.168.3.132:8080/ws");
+      let lastX, lastY;
+      document.addEventListener("touchmove", e => {
+        const t = e.touches[0];
+        if (lastX !== undefined) {
+          ws.send(JSON.stringify({ dx: t.clientX - lastX, dy: t.clientY - lastY }));
+        }
+        lastX = t.clientX;
+        lastY = t.clientY;
+      });
+      document.addEventListener("touchend", () => { lastX = lastY = undefined; });
+    </script>
+    <h1 style="color: white; text-align: center;">Touch to Move Cursor</h1>
+  </body>
+</html>

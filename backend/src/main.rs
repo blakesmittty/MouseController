@@ -1,9 +1,9 @@
 use enigo::{Enigo, MouseControllable};
 use serde::Deserialize;
-use tokio::net::TcpListener;
-use tokio_tungstenite::accept_async;
 use tungstenite::{stream, Message};
 use futures_util::{StreamExt, SinkExt};
+use warp::{filters::ws::WebSocket, Filter};
+//use std::{convert::Infallible, os::linux::raw::stat};
 
 #[derive(Deserialize)]
 struct Move {
@@ -12,27 +12,36 @@ struct Move {
 }
 
 
+pub async fn ws_handler(ws: WebSocket) {
+    let (mut tx, mut rx) = ws.split();
+    let mut enigo = Enigo::new();
+
+    while let Some(Ok(msg)) = rx.next().await {
+        if msg.is_text() {
+            if let Ok(parsed) = serde_json::from_str::<Move>(msg.to_str().unwrap()) {
+                enigo.mouse_move_relative(parsed.dx, parsed.dy);
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
-    
-    let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("server running on port 8080");
+    // serving the static files for the touchpad
+    let static_files = warp::fs::dir("static/");
+    // ws route for input
+    let ws_route = warp::path("ws")
+        .and(warp::ws())
+        .map(|ws: warp::ws::Ws| {
+            ws.on_upgrade(ws_handler)
+        })
+        .boxed();
 
-    while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(async move {
-            let ws_stream = accept_async(stream).await.unwrap();
-            let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-            let mut enigo = Enigo::new();
+        let routes = ws_route.boxed().or(static_files.boxed());
 
-            while let Some(msg) = ws_receiver.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(parsed) = serde_json::from_str::<Move>(&text) {
-                        enigo.mouse_move_relative(parsed.dx, parsed.dy);
-                    }
-                }
-            }
-        });
-    }
+    println!("Server running on http://localhost:8080");
+    warp::serve(routes)
+        .run(([0, 0, 0, 0], 8080))
+        .await;
 
 }
